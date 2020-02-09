@@ -1,0 +1,620 @@
+//--------------------------------------------------------------------------------------
+
+//JENKINS PIPELINE FILE-------------------------------
+//TODO utilize freestyle project vs current construct to decrease number of items managed within script in order to leverage the GUI more consistently
+//TODO dedupe configs for Sonarqube herein with GUI. Prefer to maintain the configs herein, therefore would recommend deprecating from GUI - https://jenkins.whirlpoolcorp.com/configureTools/
+//TODO expose the artifacts from static analysis to Sonarqube for reuse...currently they are not being retained in workstream folder across stages
+//TODO add performance testing / regression testing phases in
+//TODO add front end / BDD testing in -
+//TODO determine how we will centrally manage scripts within the pipeline
+//TODO Tune steps to run in parallel where possible
+//  FORMAT = Declarative Script Language (DSL)
+//  LANGUAGE = The basic statements and expressions which are valid in Declarative Pipeline follow the same rules as Groovy’s syntax with the following exceptions:
+//  CODE CHECKOUT - is handled through the pipeline configuration  GUI, and is no longer needing to be annotated in the script
+//  GUI CONFIGURATIONS
+// Jenkins GUI in GLOBAL Configurations
+// M2 REPOSITORY - location is set in Jenkins GUI as ~/m2 - https://jenkins.whirlpoolcorp.com/configure
+// MAVEN SETTINGS - Set to use default settings via gui
+// Default Global Settings - Set to use custom file stored at - https://jenkins.whirlpoolcorp.com/configfiles/
+// SONARQUBE - removed from GUI, given primary configs are set in global settings.xml and project pom.xml
+// WALL DISPLAY - Some configurations present, but not all elements of the UI function
+// Veracode configuration set within GUI, not present in Jenkins File
+// Test Results Analyzer configuration in GUI
+
+// FUNCTIONAL DESIGN----------------------------------
+//  WHR AEM Jenkins file Functional Design can be found here - https://confluence.whirlpoolcorp.com/display/NDO/aem+Jenkins+DLS+File+-+Functional+Design
+
+// REFERENCE DOCS-------------------------------------
+//  ENVIRONMENT VARIABLES = https://e.printstacktrace.blog/jenkins-pipeline-environment-variables-the-definitive-guide/
+//  GROOVY HELP DOC = https://www.eficode.com/blog/jenkins-groovy-tutorial
+//  WARN ERROR Reference Doc - https://jenkins.io/blog/2019/07/05/jenkins-pipeline-stage-result-visualization-improvements/
+//  NOTIFICATIONS -
+// REFERENCE DOC - https://jenkins.io/blog/2017/02/15/declarative-notifications/
+// TODO move notifications to a shared library
+// BUILD OPTIONS/ PARAMETERS - https://jenkins.io/blog/2017/01/19/converting-conditional-to-pipeline/
+// BROWSER TESTING - https://jenkins.io/blog/2016/08/29/sauce-pipeline/
+// JENKINS DSL PLUGIN PLAYGROUND = http://job-dsl.herokuapp.com/
+// BITBUCKET PULL REQUEST BUILDER PLUGIN = https://github.com/nishio-dens/bitbucket-pullrequest-builder-plugin
+// SENDING CODE ANALYSIS VIOLATIONS TO BITBUCKET DIRECTLY - https://github.com/jenkinsci/violation-comments-to-stash-plugin
+//TODO MAKE SURE VIOLATION COMMENTS & ANNOTATIONS COME FROM SONAR, OTHERWISE, IMPL THI SALTERNATIVE - https://github.com/jenkinsci/violation-comments-to-stash-plugin
+// CONDITIONAL STEPS - https://jenkinsci.github.io/job-dsl-plugin/#method/javaposse.jobdsl.dsl.helpers.step.MultiJobStepContext.conditionalSteps
+
+
+
+// DEFINING TOKENS ------------------------
+//!! Only the use of quotes to declare a string string will support the dollar-sign ($) based string interpolation, for example: ${username}
+//Environment tokens to support deployment process below
+dev1Author = "http://10.2.132.213:4502"
+dev1Publisher = "http://10.2.132.222:4503"
+dev2Author = "http://158.52.8.122:4502"
+dev2Publisher = "http://158.52.8.123:4503"
+qa1Author = "http://10.2.133.136:4502"
+qa1Publisher1 = "http://10.2.133.148:4503"
+qa1Publisher2 = "http://10.2.133.202:4503"
+qa2Author = "http://158.52.8.168:4502"
+qa2Publisher1 = "http://158.52.8.169:4503"
+qa2Publisher2 = "http://158.52.8.170:4503"
+stgAuthor = "http://10.2.133.11:4502"
+stgPublisher1 = "http://10.2.133.18:4503"
+stgPublisher2 = "http://10.2.133.109:4503"
+perfAuthor = "http://10.2.134.28:4502"
+perfPublisher1 = "http://10.2.134.15:4503"
+perfPublisher2 = "http://10.2.134.104:4503"
+dev4Author = "http://dev4-auth:4502"
+dev4Publisher = "http://dev4-pub:4503"
+
+//Defines the script needed to return the code version
+def versionNumber = {
+    sh( label: '', script: '''#!/usr/bin/env bash
+                mvn org.apache.maven.plugins:maven-help-plugin:2.1.1:evaluate -Dexpression=project.version | grep -Ev \'(^\\[|Download\\w+:)\' | xargs''',
+            //No need to run sh "echo ${versionNumber} given the use of returnStDout, which will print value
+            returnStdout: true
+            //Remove unnecessary whitespace from returned values
+    ).trim()
+}
+
+//This is the definition for the shared deployment script / profile for aem
+// PROFILE TRIGGER - Logged within deploy stage and triggered by the use of the "deployAEMPackage" variable
+// Env / server configs are stored in each of the stages
+def deployAEMPackage = "$env.BRANCH_NAME, $env.BUILD_NUMBER, $params.deployTarget, $module" {
+
+    // TODO look into copying artifacts down, vs using script to locate them, or deploying from Nexus or by unstashing them
+
+    // This step / script defines the pattern for where a content package can be found
+    contentPackage = [sh(
+            script: "echo \$(cd $module/target && ls -1 *.zip)",
+            //Prints the script output on the screen
+            returnStdout: true
+    ).trim()]
+
+
+    // This step / script defines the path & file name pattern to locate content packages (i.e. ui.apps/target/digitalplatform.ui.apps SNAPSHOT-1.30.zip
+    built = "./$module/target/$contentPackage"
+
+    // This step defines the package information
+    pkg = ["${packageDescription}/$contentPackage"]
+
+    //sets the permissions of the file output so that they can be readable, writable and executable by any user or group on Jenkins server
+
+    sh "chmod 777 $built"
+
+    // Script to Deploy to Author
+    withCredentials([usernamePassword(credentialsId: "$authCredID", usernameVariable: "$authUser", passwordVariable: "$authPass")]) {
+
+        //Notify user that code is deploying to specified environment and server
+        echo "Deploying to $deploy Author $author $authUser $pkg $built"
+
+        //Configures the warning message if the deployment fails
+        warnError('Deployment to Author FAILED') {
+            script {
+                sh "./scripts/install-package.sh $author $authUser $authPass $pkg $built"
+            }
+        }
+        //Notify user that code has deployed
+        echo "Deployment of AEM Code to $deploy Author was Successful"
+    }
+
+    //Deploy to Publisher 1
+    withCredentials([usernamePassword(credentialsId: pub1CredID, usernameVariable: 'pub1User', passwordVariable: 'pub1Pass')]) {
+
+        //Notify user that code is deploying to specified environment and server
+        echo "Deploying to $deploy Publisher 1"
+
+        //Configures the warning message if the deployment fails
+        warnError('Deployment to Publisher 1 FAILED') {
+            script {
+                sh "./scripts/install-package.sh $publisher1 $pub1User $pub1Pass $pkg $built"
+            }
+        }
+        //Notify user that code has deployed
+        echo "Deployment of AEM Code to $deploy Publisher 1 was Successful"
+    }
+
+    if ($pub2Needed == true) {
+        withCredentials([usernamePassword(credentialsId: pub2CredID, usernameVariable: 'pub2User', passwordVariable: 'pub2Pass')]) {
+
+            //Notify user that code is deploying to specified environment and server
+            echo "Deploying to $deploy Publisher 2"
+
+            //Configures the warning message if the deployment fails
+            warnError('Deployment to Publisher 2 FAILED') {
+                script {
+                    sh "./scripts/install-package.sh $publisher2 $pub2User $pub2Pass $pkg $built"
+                }
+            }
+            //Notify user that code has deployed
+            echo "Deployment of AEM Code to $deploy Publisher 2 was Successful"
+        }
+    }
+} // END Global deployAEMPackage configs
+
+
+
+/*Global Pipeline Configurations for all stages - Start */
+pipeline {
+
+    //Agent indicates that Jenkins should allocate an executor and workspace for this part of the Pipeline.
+    agent any // Value = "Any allows the SYSTEM to choose which agent executes the output"
+
+    // The options directive allows configuring Pipeline-specific options from within the Pipeline itself and can be set
+    // at the pipeline level or the stage level
+
+    environment {
+        // Need to specify these variables, or shell scripts will not run
+        PATH = "/sbin:/usr/sbin:/usr/bin:/usr/local/bin:/bin"
+        // HOME variable needs to be explicitly specified, or the build will fail fatally
+        HOME = "/var/lib/jenkins" //TODO Specify home variable explicitly
+    }
+
+    //Global tool configurations / options - https://jenkins.whirlpoolcorp.com/configureTools/
+    tools {
+        maven "m2"
+        jdk "java8"
+        nodejs "node6"
+    }
+
+    maven {
+        localRepository(LocalRepositoryLocation.LOCAL_TO_WORKSPACE)
+    }
+
+    options {
+
+        //Sets the period for the pipeline to run before Jenkins will invoke an automatic timeout
+        timeout(time: 15, unit: 'MINUTES')
+
+        //Will prepend console output with timestamps
+        timestamps()
+
+        //Will cause parallel stages to fail fast
+        parallelsAlwaysFailFast()
+
+        //Adds color to the Jenkins Console
+        ansiColor('xterm')
+    }
+
+    //The triggers directive allows the administrators to set the rules around how builds can be triggered
+    triggers {
+        // TODO configure pipeline triggers / branches to
+        //Will build code automatically when there is a Pull Request from Bitbucket
+        bitbucketPush (
+                Ref_Filter: "PUSH_EVENT",
+                branches: "*",
+                parameters (deployTarget:"None - Build Only")
+        )
+        bitbucketpr(
+                Ref_Filter: "PR_OPENED", "PUSH_EVENT",
+                branches: "*",
+                parameters (deployTarget:"None - Build Only")
+        )
+
+        //Will automatically build code daily
+        cron "@daily"
+    }
+
+
+    //Sets the configuration for the input parameters which are required to trigger a build
+    parameters {
+        // TODO determine if config will be managed in script file or GUI - https://jenkins.whirlpoolcorp.com/job/Whirlpool/job/digital-platform%20Pipeline/configure
+
+        //Sets the values as multiple choice, which will drive the target server configuration for the deploy stage
+        choice(
+                name:"deployTarget",
+                description: "Target Deployment Environment(s) Selection",
+                choices:["None - Build Only", "Dev 1", "Dev 2", "Dev 4", "Dev 5", "QA 1", "QA 2", "Perf", "Stage"]
+        )
+
+        //Skip Test booleanParam sets the UI type as a checkbox
+        booleanParam(
+                name: "skipTestExecution",
+                defaultValue: false,
+                description: "Check the box to disable the Test Execution Stage"
+        )
+
+        //Skip Static Analysis  booleanParam sets the UI type as a checkbox
+        booleanParam(
+                name: "skipStaticAnalysis",
+                defaultValue: false,
+                description: "Check the box to disable the Static Analysis Execution Stage"
+        )
+
+
+        //Skip Sonarqube booleanParam sets the UI type as a checkbox
+        booleanParam(
+                name: "skipSonarExecution",
+                defaultValue: false,
+                description: "Check the box to disable the Sonarqube Execution Stage"
+        )
+    }
+
+
+
+
+//GLOBAL Build Parameter Rule Sets
+
+    //TODO - complete parameter input setup for Bitbucket Triggers
+
+    //if (cron == "@daily") {
+    //deployTarget = "None - Build Only"
+    //}
+
+    //if (trigger == "bitbucketpr") {
+    //deployTarget = "None - Build Only"
+    //}
+
+    //if (trigger == "bitbucketPush") {
+    //deployTarget = "None - Build Only"
+    //}
+
+    //TODO VALIDATE AUTOMATED RULES FOR DEPLOYMENT, GIVEN ENVIRONMENT REDISTRIBUTION
+    //if (env.BRANCH_NAME == "d2cdp/develop") {
+    // deployTarget = "Dev2"
+    //}
+
+    //if (env.BRANCH_NAME.startsWith("hotfix/") || env.BRANCH_NAME.startsWith("d2cdp/release/") || env.BRANCH_NAME == "master") (
+    //    params.deployTarget = "Dev2"
+    //)
+
+
+    //Begin defining the various build Stages
+    stages {
+        stage('Print Build & Env Info') {
+            steps {
+
+                deliveryPipelineConfiguration ('Get Environment Info.')
+
+                script {
+                    //Run script to retrieve the version number of the code from the maven package
+                    ${versionNumber}
+                }
+
+                //Print Jenkins Environment Info on screen
+                //TODO deprecate legacy "env" script from Jenkins script
+                sh "printenv | sort"
+
+
+                //Print the Build Number
+                echo "The build number is ${env.BUILD_NUMBER}"
+
+                //Print Maven Version on screen along with JDK installation info
+                sh "mvn --version"
+
+                //Print user entered build Parameters
+                echo "Environments to deploy to ${deployTarget}"
+
+                echo "Tests will be skipped? ${skipTestExecution}"
+
+                echo "Sonarqube Execution will be skipped? ${skipSonarExecution}"
+
+                echo "Static  Analysis ll be skipped? ${skipSonarExecution}"
+
+                echo "${BITBUCKET_PAYLOAD}"
+            }
+        }
+
+        stage("Build AEM Code & SKIP Tests") {
+            //TODO add additional logic that will allow for this to be run for merges to master, and allow for feature and bug fix branches only
+            when {
+                expression {
+                    //Uses this pipeline configuration to build the aem code, while skipping the tests
+                    return params.skipTestExecution == true
+                }
+            }
+            steps {
+                wrappers {
+                    colorizeOutput(colorMap = "xterm")
+                }
+                //Configuration for Stage Error messaging
+
+                warnError('aem build failed') {
+
+                    sh "mvn clean install -U -e -DskipTests -Padobe-public"
+                    //The Adobe Public Profile is configured in the Global Maven "settings.xml"
+                    //TODO Add nexus repo in to overcome the requirement to install dependencies over and over
+                }
+                archiveArtifacts artifacts: ('**/target/*.jar')
+                archiveArtifacts artifacts: ('**/target/*.zip')
+
+                //Publish Static Analysis for Warnings Next Gen Plugin
+            }
+        }
+
+        stage('Build AEM & Test') {
+            //TODO force the running of test scripts in the future for merges to develop branches and validation of hotfixes and merges to PRs to release branches
+            when {
+                expression {
+                    return params.skipTestExecution == false //Uses this pipeline configuration to build the aem code, to PROCESS / RUN the tests
+                }
+            }
+            steps {
+                wrappers {
+                    colorizeOutput(colorMap = "xterm")
+                }
+
+                warnError('AEM Build & Test Has Failed') {
+
+                    //Maven Build Command, -e Turns on stacktraces, -U forces updates, -Pjacoco is the JaCoCo code coverage profile
+                    sh "mvn clean install -e -U -Pjacoco -Padobe-public" //Runs maven unit tests and executes JaCoCo code coverage profile
+                }
+
+
+                //Archives Maven Build Archives so they can be used /accessed later if needed
+                archiveArtifacts artifacts: ('**/target/*.jar')
+                archiveArtifacts artifacts: ('**/target/*.zip')
+
+
+                //Publishes jUnit report data for display within Jenkins
+                junit testResults: '**/target/surefire-reports/TEST-*.xml'
+
+                //Publishes jacoco report data for display within Jenkins
+                jacoco execPattern: '**/target/jacoco.exec'
+            }
+        }
+
+        stage ('Static Code * Sonar Analysis') {
+            when {
+                expression {
+                    //Uses this pipeline configuration to build the aem code, to PROCESS / RUN the tests
+                    return params.skipStaticAnalysis == false
+                }
+            }
+            steps {
+
+                // Compile / Static Analysis
+                warnError('Static Analysis has FAILED') {
+
+                    sh "mvn install -e -U -DskipTests -Pstatic-analysis -Padobe-public"
+                }
+
+                //Sonarqube analysis
+                warnError('Sonarqube Analysis has FAILED') {
+
+                    sh "mvn sonar:sonar -Dsonar.branch.name=${env.BRANCH_NAME} -Dsonar.source.branch= ${BITBUCKET_SOURCE_BRANCH} -Dsonar.target.branch= ${BITBUCKET_TARGET_BRANCH}"
+                }
+
+
+                //Script protocol is needed here, otherwise Pipeline will throw an error
+                //TODO Remediate post build publish issue, as it would not be anticipated that the script variable would be needed here - https://github.com/jenkinsci/job-dsl-plugin/wiki/Script-Security
+                script {
+
+                    checkstyle = scanForIssues tool: checkStyle(pattern: '**/target/checkstyle-result.xml')
+                    publishIssues issues: [checkstyle]
+
+                    pmd = scanForIssues tool: pmdParser(pattern: '**/target/pmd.xml')
+                    publishIssues issues: [pmd]
+
+                    cpd = scanForIssues tool: cpd(pattern: '**/target/cpd.xml')
+                    publishIssues issues: [cpd]
+
+                    spotbugs = scanForIssues tool: spotBugs(pattern: '**/target/spotbugsXml.xml')
+                    publishIssues issues: [spotbugs]
+
+                    maven = scanForIssues tool: mavenConsole()
+                    publishIssues issues: [maven]
+                }
+            }
+        }
+
+        stage('Deploy Code') {
+            when {
+                expression {
+                    //This process will only execute when the chosen deployment parameter is NOT EQUAL to the "Build Only" option
+                    return params.deployTarget != "None - Build Only"
+                }
+            }
+            steps {
+                stage('Deploy Code - Dev1') {
+                    when {
+                        expression {
+                            //This process will only execute when the chosen deployment parameter is NOT EQUAL to the "Build Only" option
+                            return params.deployTarget == "Dev1"
+                        }
+                    }
+                    steps {
+
+                        echo "Deploying to Dev1"
+
+                        // Dev1 Target Deployment Environment Variables
+                        authCredID = "70482b66-99dd-4265-b683-d1f4b89bdf87"
+                        author = "${dev1Author}"
+                        pub1CredID = "824cd8d2-73dd-4453-838f-35660dc25af6"
+                        publisher1 = "${dev1Publisher}"
+                        pub2Needed = false
+
+                        // The use of the variable ${aemPackageDeploy} variable calls the global function for deployment
+                        warnError('Dev1 Deployment Failed') {
+                            $ {deployAEMPackage}
+                        }
+                    }
+                }
+
+                stage('Deploy Code - Dev2') {
+                    when {
+                        expression {
+                            //This process will only execute when the chosen deployment parameter is NOT EQUAL to the "Build Only" option
+                            return params.deployTarget == "Dev2"
+                        }
+                    }
+                    steps {
+
+                        echo "Deploying to Dev2"
+
+                        // Dev2 Target Deployment Environment Variables
+                        authCredID = "c3aa2be0-49d3-4456-bcf9-1fefe9370bfa"
+                        author = "${dev2Author}"
+                        pub1CredID = "fb37e903-4c8a-441d-b3a0-962df964cc0d"
+                        publisher1 = "${dev2Publisher}"
+                        pub2Needed = false
+
+                        // The use of the variable ${aemPackageDeploy} variable calls the global function for deployment
+                        warnError('Dev2 Deployment Failed') {
+                            $ { deployAEMPackage }
+                        }
+                    }
+                }
+
+                stage('Deploy Code - Dev4') {
+                    when {
+                        expression {
+                            //This process will only execute when the chosen deployment parameter is NOT EQUAL to the "Build Only" option
+                            return params.deployTarget == "Dev4"
+                        }
+                    }
+                    steps {
+
+                        echo "Deploying to Dev4"
+
+                        // Dev4 Target Deployment Environment Variables
+                        authCredID = "c3aa2be0-49d3-4456-bcf9-1fefe9370bfa"
+                        author = "$dev4Author"
+                        pub1CredID = "fb37e903-4c8a-441d-b3a0-962df964cc0d"
+                        publisher1 = "$dev4Publisher"
+                        pub2Needed = false
+
+                        // The use of the variable ${aemPackageDeploy} variable calls the global function for deployment
+                        warnError('Dev4 Deployment Failed') {
+                            $ { deployAEMPackage }
+                        }
+                    }
+                }
+
+                stage('Deploy Code - QA1') {
+                    when {
+                        expression {
+                            //This process will only execute when the chosen deployment parameter is NOT EQUAL to the "Build Only" option
+                            return params.deployTarget == "QA1"
+                        }
+                    }
+                    steps {
+
+                        echo "Deploying to QA1"
+
+                        // QA1 Target Deployment Environment Variables
+                        authCredID = "1b6555ba-a338-4685-86b2-459e037d5705"
+                        author = "${qa1Author}"
+                        pub1CredID = "3e2a312b-55b5-4de3-8536-c640a74d1b28"
+                        publisher1 = "${qa1Publisher1}"
+                        pub2Needed = true
+                        pub2CredID = "e6d9a154-440b-473c-abaa-9236d2a9096c"
+                        publisher2 = "$qa1Publisher2"
+
+                        // The use of the variable ${aemPackageDeploy} variable calls the global function for deployment
+                        warnError('QA1 Deployment Failed') {
+                            $ { deployAEMPackage }
+                        }
+                    }
+                }
+
+                stage('Deploy Code - QA2') {
+                    when {
+                        expression {
+                            //This process will only execute when the chosen deployment parameter is NOT EQUAL to the "Build Only" option
+                            return params.deployTarget == "QA2"
+                        }
+                    }
+                    steps {
+
+                        echo "Deploying to QA2"
+
+                        // QA2 Target Deployment Environment Variables
+                        authCredID = "2543ab01-a6f4-41a2-a061-f7633d9be3b0"
+                        author = "${qa2Author}"
+                        pub1CredID = "2d9854ff-e5a2-4db1-9015-e6a8b1bb3d87"
+                        publisher1 = "$qa2Publisher1"
+                        pub2Needed = true
+                        pub2CredID = "cd744f48-4c3c-479d-8faa-664e99b9388e"
+                        publisher2 = "${qa2Publisher2}"
+
+                        // The use of the variable ${aemPackageDeploy} variable calls the global function for deployment
+                        warnError('QA2 Deployment Failed') {
+                            $ { deployAEMPackage }
+                        }
+                    }
+                }
+
+                stage('Deploy Code - Perf') {
+                    when {
+                        expression {
+                            //This process will only execute when the chosen deployment parameter is NOT EQUAL to the "Build Only" option
+                            return params.deployTarget == "Perf"
+                        }
+                    }
+                    steps {
+
+                        echo "Deploying to Perf"
+
+                        // Perf Target Deployment Environment Variables
+                        authCredID = "fb3027ae-28cf-4070-9b22-c85d2a6300e1"
+                        author = "${perfAuthor}"
+                        pub1CredID = "4195f9b2-f97d-4f2c-901b-c25315edec4e"
+                        publisher1 = "${perfPublisher1}"
+                        pub2Needed = true
+                        pub2CredID = "dbdd1dea-588c-4dc5-b052-a46618e7b96c"
+                        publisher2 = "${perfPublisher2}"
+
+                        warnError('QA2 Deployment Failed') {
+                            $ { deployAEMPackage }
+                        }
+                    }
+                }
+
+                stage('Deploy Code - Stage') {
+                    when {
+                        expression {
+                            //This process will only execute when the chosen deployment parameter is NOT EQUAL to the "Build Only" option
+                            return params.deployTarget == "Stage"
+                        }
+                    }
+                    steps {
+
+                        // Stage Target Deployment Environment Variables
+                        authCredID = "89ff207e-b735-4ab7-90c6-6893574e35c3"
+                        author = "$stgAuthor"
+                        pub1CredID = "75c0f17d-cc30-4a84-a6d7-caa831059a98"
+                        publisher1 = "{$stgPublisher1}"
+                        pub2Needed = true
+                        pub2CredID = "87f69c2e-8ee8-4c1b-ab82-b4f9afe8d160"
+                        publisher2 = "${stgPublisher2}"
+
+                        warnError('Stage Deployment Failed') {
+                            $ { deployAEMPackage }
+                        }
+                    }
+                }
+            }
+        }
+
+        //stage('Cleanup') {
+        //steps {
+        //Clean workspace if build passes
+        //cleanWs notFailBuild: true
+        //}
+    }
+
+}  // End of Stages Section
+
+
+
+
+
+
+
