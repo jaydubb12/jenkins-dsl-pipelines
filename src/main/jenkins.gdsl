@@ -1,0 +1,380 @@
+package main
+/**
+ * Defines the "Where". Context definition in GroovyDSL is nothing but an invocation of a predefined method context
+ * with optional arguments, each of which may be omitted. Without any arguments given invocation of
+ * context method returns the definition of an empty context, which has a meaning ``everywhere''.
+ */
+def gdslScriptContext = context(
+                    scope: scriptScope(),
+                    filetypes: ["gdsl","groovy"]
+)
+
+
+/**
+ * Contributors provide new properties and methods according to given contexts.
+ * We provide a set of utility methods to augment existing types with new behavior,
+ * which may be used in a contributor application as regular Groovy methods.
+ */
+contributor([gdslScriptContext]) {
+    method name: "context", params: [args: [:]], type: "java.lang.Object"
+    method name: "contributor", params: [contexts: "java.util.List", body: {}], type: void
+
+    // scopes
+    property name: "closureScope", type: {}
+    property name: "scriptScope", type: {}
+
+
+    // Parent Pipeline Object
+    method(name: 'pipeline', type: Object, params: [body: Closure], doc: 'Declarative Pipeline')
+    property(name: 'pipeline', type: 'org.jenkinsci.plugins.pipeline.modeldefinition.ModelStepLoader')
+    property(name: 'params', type: 'org.jenkinsci.plugins.workflow.cps.ParamsVariable')
+    property(name: 'env', type: 'org.jenkinsci.plugins.workflow.cps.EnvActionImpl.Binder', doc: 'Environment variable')
+    property(name: 'currentBuild', type: 'org.jenkinsci.plugins.workflow.cps.RunWrapperBinder')
+    property(name: 'scm', type: 'org.jenkinsci.plugins.workflow.multibranch.SCMVar')
+
+}
+// Define default env vars
+def envVars = context(ctype: 'org.jenkinsci.plugins.workflow.cps.EnvActionImpl.Binder')
+
+contributor([envVars]) {
+    property(name: 'BRANCH_NAME', type: String, doc: 'For a multibranch project, this will be set to the name of the branch being built, for example in case you wish to deploy to production from master but not from feature branches; if corresponding to some kind of change request, the name is generally arbitrary (refer to CHANGE_ID and CHANGE_TARGET)')
+    property(name: 'CHANGE_ID', type: String, doc: 'For a multibranch project corresponding to some kind of change request, this will be set to the change ID, such as a pull request number, if supported; else unset')
+    property(name: 'CHANGE_URL', type: String, doc: 'For a multibranch project corresponding to some kind of change request, this will be set to the change URL, if supported; else unset')
+    property(name: 'CHANGE_TITLE', type: String, doc: 'For a multibranch project corresponding to some kind of change request, this will be set to the title of the change, if supported; else unset')
+    property(name: 'CHANGE_AUTHOR', type: String, doc: 'For a multibranch project corresponding to some kind of change request, this will be set to the username of the author of the proposed change, if supported; else unset')
+    property(name: 'CHANGE_AUTHOR_DISPLAY_NAME', type: String, doc: 'For a multibranch project corresponding to some kind of change request, this will be set to the human name of the author, if supported; else unset')
+    property(name: 'CHANGE_AUTHOR_EMAIL', type: String, doc: 'For a multibranch project corresponding to some kind of change request, this will be set to the email address of the author, if supported; else unset')
+    property(name: 'CHANGE_TARGET', type: String, doc: 'rFo a multibranch project corresponding to some kind of change request, this will be set to the target or base branch to which the change could be merged, if supported; else unset')
+    property(name: 'BUILD_NUMBER', type: String, doc: 'The current build number, such as "153"')
+    property(name: 'BUILD_ID', type: String, doc: 'The current build ID, identical to BUILD_NUMBER for builds created in 1.597+, but a YYYY-MM-DD_hh-mm-ss timestamp for older builds')
+    property(name: 'BUILD_DISPLAY_NAME', type: String, doc: 'The display name of the current build, which is something like "#153" by default')
+    property(name: 'JOB_NAME', type: String, doc: 'Name of the project of this build, such as "foo" or "foo/bar"')
+    property(name: 'JOB_BASE_NAME', type: String, doc: 'Short Name of the project of this build stripping off folder paths, such as "foo" for "bar/foo"')
+    property(name: 'BUILD_TAG', type: String, doc: 'String of "jenkins-${JOB_NAME}-${BUILD_NUMBER}". All forward slashes (/) in the JOB_NAME are replaced with dashes (-). Convenient to put into a resource file, a jar file, etc for easier identification')
+    property(name: 'EXECUTOR_NUMBER', type: String, doc: 'The unique number that identifies the current executor (among executors of the same machine) that’s carrying out this build. This is the number you see in the "build executor status", except that the number starts from 0, not 1')
+    property(name: 'NODE_NAME', type: String, doc: 'Name of the agent if the build is on an agent, or "master" if run on master')
+    property(name: 'NODE_LABELS', type: String, doc: 'Whitespace-separated list of labels that the node is assigned')
+    property(name: 'WORKSPACE', type: String, doc: 'The absolute path of the directory assigned to the build as a workspace')
+    property(name: 'JENKINS_HOME', type: String, doc: 'The absolute path of the directory assigned on the master node for Jenkins to store data')
+    property(name: 'JENKINS_URL', type: String, doc: 'Full URL of Jenkins, like http://server:port/jenkins/ (note: only available if Jenkins URL set in system configuration)')
+    property(name: 'BUILD_URL', type: String, doc: 'Full URL of this build, like http://server:port/jenkins/job/foo/15/ (Jenkins URL must be set)')
+    property(name: 'JOB_URL', type: String, doc: 'Full URL of this job, like http://server:port/jenkins/job/foo/ (Jenkins URL must be set)')
+}
+
+def closures = context(scope: closureScope())
+
+contributor([closures]) {
+    // What things can be inside a pipeline
+    if (enclosingCall('pipeline')) {
+        method(name: 'ansiColor', type: Object, params: [colorMapName: String], doc: 'Color ANSI Console Output')
+        method(name: 'echo', type: Object, params: [message: String], doc: 'Print Message')
+        method(name: 'stages', type: Object, params: [body: Closure], doc: 'Stages')
+        method(name: 'agent', type: Object, params: [body: Closure], doc: 'Label expression to select agents')
+        method(name: 'parameters', type: Object, params: [body: Closure], doc: 'Job parameters')
+        method(name: 'options', type: Object, params: [body: Closure])
+        method(name: 'environment', type: Object, params: [body: Closure], doc: 'Setting environment variables for this pipeline')
+        method(name: 'triggers', type: Object, params: [body: Closure], doc: 'Build triggers')
+        method(name: 'post', type: Object, params: [body: Closure], doc: 'Post build actions')
+        method(name: 'jiraComment', type: Object, namedParams: [parameter(name: 'issueKey', type: String), parameter(name: 'body', type: String)], doc: 'JIRA: Add a comment to issue(s)')
+        method(name: 'jiraIssueSelector', type: Object, params: [:], doc: 'JIRA: Issue selector')
+        method(name: 'jiraIssueSelector', type: Object, namedParams: [parameter(name: 'issueSelector', type: Map)], doc: 'JIRA: Issue selector')
+        method(name: 'jiraSearch', type: Object, params: [jql: String], doc: 'JIRA: Search issues')
+        method(name: 'build', type: Object, params: [job: String], doc: 'Build a job')
+        method(name: 'build', type: Object, namedParams: [parameter(name: 'job', type: String), parameter(name: 'parameters', type: List), parameter(name: 'propagate', type: Boolean), parameter(name: 'quietPeriod', type: Integer), parameter(name: 'wait', type: Boolean)], doc: 'Build a job')
+        method(name: 'ec2', type: Object, namedParams: [parameter(name: 'cloud', type: String), parameter(name: 'template', type: String)], doc: 'Cloud template provisioning')
+        method(name: 'error', type: Object, pagenarams: [message: String], doc: 'Error signal')
+        method(name: 'input', type: Object, params: [message: String], doc: 'Wait for interactive input')
+        method(name: 'input', type: Object, namedParams: [parameter(name: 'message', type: String), parameter(name: 'id', type: String), parameter(name: 'ok', type: String), parameter(name: 'parameters', type: Map), parameter(name: 'submitter', type: String), parameter(name: 'submitterParameter', type: String)], doc: 'Wait for interactive input')
+        method(name: 'isUnix', type: Object, params: [:], doc: 'Checks if running on a Unix-like node')
+        method(name: 'library', type: Object, params: [identifier: String], doc: 'Load a shared library on the fly')
+        method(name: 'library', type: Object, namedParams: [parameter(name: 'identifier', type: String), parameter(name: 'changelog', type: 'java.lang.Boolean'), parameter(name: 'retriever', type: Map)], doc: 'Load a shared library on the fly')
+        method(name: 'libraryResource', type: Object, params: [resource: String], doc: 'Load a resource file from a shared library')
+        method(name: 'mail', type: Object, namedParams: [parameter(name: 'subject', type: String), parameter(name: 'body', type: String), parameter(name: 'bcc', type: String), parameter(name: 'cc', type: String), parameter(name: 'charset', type: String), parameter(name: 'from', type: String), parameter(name: 'mimeType', type: String), parameter(name: 'replyTo', type: String), parameter(name: 'to', type: String)], doc: 'Mail')
+        method(name: 'milestone', type: Object, params: [ordinal: Integer], doc: 'The milestone step forces all builds to go through in order')
+        method(name: 'milestone', type: Object, namedParams: [parameter(name: 'ordinal', type: Integer), parameter(name: 'label', type: String)], doc: 'The milestone step forces all builds to go through in order')
+        method(name: 'node', type: Object, params: [body: Closure], doc: 'Allocate node')
+        method(name: 'node', type: Object, params: [label: String, body: Closure], doc: 'Allocate node')
+        method(name: 'properties', type: Object, params: [properties: Map], doc: 'Set job properties')
+        method(name: 'readTrusted', type: Object, params: [path: String], doc: 'Read trusted file from SCM')
+        method(name: 'resolveScm', type: Object, namedParams: [parameter(name: 'source', type: Map), parameter(name: 'targets', type: Map), parameter(name: 'ignoreErrors', type: Boolean)], doc: 'Resolves an SCM from an SCM Source and a list of candidate target branch names')
+        method(name: 'retry', type: Object, params: [count: Integer, body: Closure], doc: 'Retry the body up to N times')
+        method(name: 'checkoutToSubdirectory', type: Object, params: [dir: String], doc: 'Directory to checkout')
+        method(name: 'script', type: Object, params: [body: Closure], doc: 'Run arbitrary Pipeline script')
+        method(name: 'sleep', type: Object, params: [time: Integer], doc: 'Sleep')
+        method(name: 'sleep', type: Object, namedParams: [parameter(name: 'time', type: Integer), parameter(name: 'unit', type: String, doc: 'java.util.concurrent.TimeUnit, Can be SECONDS, MINUTES, HOURS, DAYS')], doc: 'Sleep')
+        method(name: 'timeout', type: Object, params: [time: Integer, body: Closure], doc: 'Enforce time limit')
+        method(name: 'timeout', type: Object, params: [body: Closure], namedParams: [parameter(name: 'time', type: Integer), parameter(name: 'unit', type: String, doc: 'java.util.concurrent.TimeUnit, Can be SECONDS, MINUTES, HOURS, DAYS')], doc: 'Enforce time limit')
+        method(name: 'tool', type: Object, params: [body: Closure], doc: 'Use a tool from a predefined Tool Installation')
+        method(name: 'waitUntil', type: Object, params: [body: Closure], doc: 'Wait for condition')
+        method(name: 'waitUntil', type: Map, namedParams: [parameter(name: 'initialRecurrencePeriod', type: Integer), parameter(name: 'quiet', type: Boolean)], params: [body: Closure], doc: 'Wait for condition')
+        method(name: 'withCredentials', type: Object, params: [bindings: Map, body: Closure], doc: 'Bind credentials to variables')
+        method(name: 'withCredentials', type: Object, params: [bindings: List, body: Closure], doc: 'Bind credentials to variables')
+        method(name: 'withCredentials', type: Object, params: [file: Closure, string: Closure], doc: 'Bind credentials to variables')
+        method(name: 'withEnv', type: Object, params: [overrides: Map, body: Closure], doc: 'Set environment variables')
+        method(name: 'ws', type: Object, params: [dir: String, body: Closure], doc: 'Allocate workspace')
+        method(name: 'catchError', type: Object, params: [body: Closure], doc: 'Advanced/Deprecated Catch error and set build result')
+        method(name: 'dockerFingerprintRun', type: Object, params: [containerId: String], doc: 'Advanced/Deprecated Record trace of a Docker image run in a container')
+        method(name: 'dockerFingerprintRun', type: Object, namedParams: [parameter(name: 'containerId', type: String), parameter(name: 'toolName', type: String)], doc: 'Record trace of a Docker image run in a container')
+        method(name: 'envVarsForTool', type: Object, namedParams: [parameter(name: 'toolId', type: String), parameter(name: 'toolVersion', type: String)], doc: 'Fetches the environment variables for a given tool in a list of \'FOO=bar\' strings suitable for the withEnv step')
+        method(name: 'getContext', type: Object, params: [type: Map], doc: 'Advanced/Deprecated Get contextual object from internal APIs')
+        method(name: 'withContext', type: Object, params: [context: Object, body: Closure], doc: 'Advanced/Deprecated Use contextual object from internal APIs within a block')
+    }
+
+    // The agent section
+    if (enclosingCall("agent")) {
+        property(name: 'any', type: String, 'doc': 'Use any available agent')
+        property(name: 'none', type: String, 'doc': 'No global agent defined')
+        method(name: 'node', type: Closure, 'doc': 'Same as label keyword with additional options such as customWorkspace')
+        method(name: 'label', type: String, params: [agent_name: String])
+        method(name: 'customerWorkspace', type: String, 'doc': 'Location of workspace')
+        method(name: 'docker', type: String, params: [docker_image: String])
+        method(name: 'docker', type: Object, params: [body: Closure])
+        method(name: 'dockerfile', type: Boolean, params: [use_dockerfile: Boolean])
+        method(name: 'kubernetes', type: Object, params: [body: Closure], doc: 'Kubernetes environment')
+        if (enclosingCall("docker")) {
+            method(name: 'image', type: String, params: [expr: String])
+            method(name: 'label', type: String, params: [expr: String])
+            method(name: 'alwaysPull', type: Boolean)
+        }
+        if (enclosingCall("kubernetes")) {
+            method(name: 'label', type: String, params: [agent_name: String])
+            method(name: 'cloud', type: String, params: [cloud_name: String])
+            method(name: 'defaultContainer', type: String, params: [default_container: String])
+            method(name: 'yaml', type: String, params: [kubernetes_yaml_definition: String])
+            method(name: 'yamlFile', type: String, params: [kubernetes_yaml_file: String])
+        }
+    }
+
+
+    // The Global  Tool section
+    if (enclosingCall('tool')) {
+        method(name: 'maven', type: Object, params: [tool: String], doc: 'Global Maven Tool')
+        method(name: 'jdk', type: Object, params: [tool: String], doc: 'Global JDK Tool')
+        method(name: 'nodejs', type: Object, params: [tool: String], doc: 'Global Node Tool')
+    }
+
+    // The options section
+    if (enclosingCall("options")) {
+        method(name: 'timestamps')
+        method(name: 'skipStagesAfterUnstable')
+        method(name: 'skipDefaultCheckout')
+        method(name: 'preserveStashes', type: Object, namedParams: [parameter(name: 'buildCount', type: Integer)], doc: 'Preserve stashes from completed builds, for use with stage restarting')
+        method(name: 'parallelsAlwaysFailFast', doc: 'Set failfast true for all subsequent parallel stages in the pipeline')
+        method(name: 'disableResume', doc: 'Do not allow the pipeline to resume if the controller restarts')
+        method(name: 'disableConcurrentBuilds', doc: 'Disallow concurrent executions of the Pipeline')
+        method(name: 'retry', type: Object, params: [count: Integer], doc: 'Retry the pipeline up to N times')
+        method(name: 'timeout', type: Object, namedParams: [parameter(name: 'time', type: Integer), parameter(name: 'unit', type: String)])
+    }
+
+    if (enclosingCall("parameters")) {
+        method(name: 'choice', type: Object, namedParams: [parameter(name: 'name', type: String), parameter(name: 'description', type: String), parameter(name: 'choices', type: ArrayList<String>)])
+        method(name: 'booleanParam', type: Object, namedParams: [parameter(name: 'name', type: String), parameter(name: 'description', type: String), parameter(name: 'defaultValue', type: Boolean)])
+    }
+    // Inside stages can be, stage or stage('Name')
+    if (enclosingCall("stages")) {
+        method(name: 'stage', type: Object, params: [name: String, body: Closure], doc: 'Stage')
+        method(name: 'stage', type: Object, params: [body: Closure], namedParams: [parameter(name: 'name', type: String), parameter(name: 'concurrency', type: Integer)], doc: 'Stage')
+    }
+
+    // The stage section
+    if (enclosingCall("stage")) {
+        method(name: 'agent', type: Object, params: [body: Closure], doc: 'Label expression to select agents')
+        method(name: 'agent', type: String, params: [body: String], doc: 'Label expression to select agents')
+        method(name: 'warnError', type: Object, params: [name: String, body: Closure], doc: 'Ability to warn on a Stage Error')
+        method(name: 'warnError', type: Object, params: [body: Closure], doc: 'Ability to warn on a Stage Error')
+        method(name: 'wrappers', type: Object, params: [body: Closure], doc: 'Ability to apply a wrapper to a set of steps / functions')
+        method(name: 'steps', type: Object, params: [body: Closure], doc: 'Steps to execute on stage')
+        method(name: 'post', type: Object, params: [body: Closure], doc: 'Post actions can be executed on a per-stage basis as well')
+        method(name: 'parallel', type: Object, params: [body: Closure], doc: 'Execute stage in parallel')
+        method(name: 'when', type: Object, params: [body: Closure], doc: 'Whether the stage should be executed depending on the given condition')
+        method(name: 'failFast', type: Object, params: [fail: boolean], doc: 'Set failFast true for all subsequent parallel steps in the stage')
+        // Only inside when condition
+        if (enclosingCall('when')) {
+            method(name: 'branch', type: String, params: [branch: String], doc: 'Branch pattern (ANT style)')
+            method(name: 'buildingTag', doc: 'Execute the stage when the build is building a tag')
+            method(name: 'changelog', type: String, params: [changelog: String], doc: 'Execute the stage if the build’s SCM changelog contains a given regular expression pattern')
+            method(name: 'changeset', type: String, params: [changeset: String], doc: 'Execute the stage if the build’s SCM changeset contains one or more files matching the given pattern')
+            method(name: 'changeRequest', doc: 'Executes the stage if the current build is for a "change request" (a.k.a. Pull Request on GitHub and Bitbucket, Merge Request on GitLab, Change in Gerrit, etc.)')
+            method(name: 'changeRequest', doc: 'Executes the stage if the current build is for a "change request" (a.k.a. Pull Request on GitHub and Bitbucket, Merge Request on GitLab, Change in Gerrit, etc.)',
+                    namedParams: [parameter(name: 'id', type: String, doc: ''),
+                                  parameter(name: 'target', type: String, doc: ''),
+                                  parameter(name: 'branch', type: String, doc: ''),
+                                  parameter(name: 'fork', type: String, doc: ''),
+                                  parameter(name: 'url', type: String, doc: ''),
+                                  parameter(name: 'title', type: String, doc: ''),
+                                  parameter(name: 'author', type: String, doc: ''),
+                                  parameter(name: 'authorDisplayName', type: String, doc: ''),
+                                  parameter(name: 'authorEmail', type: String, doc: ''),
+                                  parameter(name: 'comparator', type: String, doc: 'Optional parameter can be EQUALS, GLOB, REGEXP'),
+                    ])
+            method(name: 'environment', type: Object, doc: 'Execute the stage when the specified environment variable is set to the given value',
+                    namedParams: [
+                            parameter(name: 'name', type: String), parameter(name: 'value', type: String)
+                    ])
+            method(name: 'equals', type: String, params: [expected: Object, actual: Object], doc: 'Execute the stage when the expected value is equal to the actual value')
+            method(name: 'expression', type: Object, params: [body: Closure], doc: 'Execute the stage when the specified Groovy expression evaluates to true')
+            method(name: 'tag', type: Object, params: [tag: String], doc: 'Execute the stage if the TAG_NAME variable matches the given pattern')
+            method(name: 'tag', type: Object, params: [pattern: String, comparator: String], doc: 'Execute the stage if the TAG_NAME variable matches the given pattern')
+            method(name: 'not', type: Object, params: [body: Closure], doc: 'Execute the stage when the nested condition is false')
+            method(name: 'allOf', type: Object, params: [body: Closure], doc: 'Execute the stage when all of the nested conditions are true.')
+            method(name: 'anyOf', type: Object, params: [body: Closure], doc: 'Execute the stage when at least one of the nested conditions is true')
+            method(name: 'triggeredBy', type: Object, params: [triggeredBy: String], doc: 'Execute the stage when the current build has been triggered by the param given')
+        }
+
+        // Only inside steps for a Stage
+        if (enclosingCall("steps") || enclosingCall("always") || enclosingCall("success") ||
+                enclosingCall("failure") || enclosingCall("unstable") || enclosingCall("changed")) {
+            method(name: 'timestamp', type: Object, params: [body: Closure], doc: 'Timestamps')
+            method(name: 'bat', type: Object, params: [script: String], doc: 'Windows Batch Script')
+            method(name: 'bat', type: Object, namedParams: [parameter(name: 'script', type: String), parameter(name: 'encoding', type: String), parameter(name: 'returnStatus', type: Boolean), parameter(name: 'returnStdout', type: Boolean)], doc: 'Windows Batch Script')
+            method(name: 'checkout', type: Object, params: [scm: Map], doc: 'General SCM')
+            method(name: 'checkout', type: Object, namedParams: [parameter(name: 'scm', type: Map), parameter(name: 'changelog', type: Boolean), parameter(name: 'poll', type: Boolean)], doc: 'General SCM')
+            method(name: 'cleanWs', doc: 'Clean workspace')
+            method(name: 'deleteDir', type: Object, params: [:], doc: 'Recursively delete the current directory from the workspace')
+            method(name: 'dir', type: Object, params: [path: String, body: Closure], doc: 'Change current directory')
+            method(name: 'fileExists', type: Object, params: [file: String], doc: 'Verify if file exists in workspace')
+            method(name: 'git', type: Object, params: [url: String], doc: 'Git')
+            method(name: 'git', type: Object, namedParams: [parameter(name: 'url', type: String), parameter(name: 'branch', type: String), parameter(name: 'changelog', type: Boolean), parameter(name: 'credentialsId', type: String), parameter(name: 'poll', type: Boolean)], doc: 'Git')
+            method(name: 'junit', type: Object, params: [testResults: String], doc: 'Archive JUnit-formatted test results')
+            method(name: 'junit', type: Object, namedParams: [parameter(name: 'testResults', type: String), parameter(name: 'allowEmptyResults', type: Boolean), parameter(name: 'healthScaleFactor', type: 'double'), parameter(name: 'keepLongStdio', type: Boolean), parameter(name: 'testDataPublishers', type: Map)], doc: 'Archive JUnit-formatted test results')
+            method(name: 'load', type: Object, params: [path: String], doc: 'Evaluate a Groovy source file into the Pipeline script')
+            method(name: 'powershell', type: Object, params: [script: String], doc: 'PowerShell Script')
+            method(name: 'powershell', type: Object, namedParams: [parameter(name: 'script', type: String), parameter(name: 'encoding', type: String), parameter(name: 'returnStatus', type: Boolean), parameter(name: 'returnStdout', type: Boolean)], doc: 'PowerShell Script')
+            method(name: 'publishHTML', type: Object, params: [target: Map], doc: 'Publish HTML reports')
+            method(name: 'pwd', type: Object, params: [:], doc: 'Determine current directory')
+            method(name: 'pwd', type: Object, namedParams: [parameter(name: 'tmp', type: Boolean)], doc: 'Determine current directory')
+            method(name: 'readFile', type: Object, params: [file: String], doc: 'Read file from workspace')
+            method(name: 'readFile', type: Object, namedParams: [parameter(name: 'file', type: String), parameter(name: 'encoding', type: String)], doc: 'Read file from workspace')
+            method(name: 'sh', type: Object, params: [script: String], doc: 'Shell Script')
+            method(name: 'sh', type: Object, namedParams: [parameter(name: 'script', type: String), parameter(name: 'encoding', type: String), parameter(name: 'returnStatus', type: Boolean), parameter(name: 'returnStdout', type: Boolean)], doc: 'Shell Script')
+            method(name: 'stash', type: Object, params: [name: String], doc: 'Stash some files to be used later in the build')
+            method(name: 'stash', type: Object, namedParams: [parameter(name: 'name', type: String), parameter(name: 'allowEmpty', type: Boolean), parameter(name: 'excludes', type: String), parameter(name: 'includes', type: String), parameter(name: 'useDefaultExcludes', type: Boolean)], doc: 'Stash some files to be used later in the build')
+            method(name: 'tm', type: Object, params: [stringWithMacro: String], doc: 'Expand a string containing macros')
+            method(name: 'unstash', type: Object, params: [name: String], doc: 'Restore files previously stashed')
+            method(name: 'validateDeclarativePipeline', type: Object, params: [path: String], doc: 'Validate a file containing a Declarative Pipeline')
+            method(name: 'wrap', type: Object, params: [delegate: Map, body: Closure], doc: 'General Build Wrapper')
+            method(name: 'writeFile', type: Object, namedParams: [parameter(name: 'file', type: String), parameter(name: 'text', type: String), parameter(name: 'encoding', type: String)], doc: 'Write file to workspace')
+            method(name: 'archive', type: Object, params: [includes: String], doc: 'Advanced/Deprecated Archive artifacts')
+            method(name: 'archive', type: Object, namedParams: [parameter(name: 'includes', type: String), parameter(name: 'excludes', type: String)], doc: 'Archive artifacts')
+            method(name: 'dockerFingerprintFrom', type: Object, namedParams: [parameter(name: 'dockerfile', type: String), parameter(name: 'image', type: String), parameter(name: 'buildArgs', type: Map), parameter(name: 'toolName', type: String)], doc: 'Record trace of a Docker image used in FROM')
+            method(name: 'unarchive', type: Object, params: [:], doc: 'Advanced/Deprecated Copy archived artifacts into the workspace')
+            method(name: 'unarchive', type: Object, namedParams: [parameter(name: 'mapping', type: Map)], doc: 'Copy archived artifacts into the workspace')
+            method(name: 'withDockerContainer', type: Object, params: [image: String, body: Closure], doc: 'Advanced/Deprecated Run build steps inside a Docker container')
+            method(name: 'withDockerContainer', type: Object, params: [body: Closure], namedParams: [parameter(name: 'image', type: String), parameter(name: 'args', type: String), parameter(name: 'toolName', type: String)], doc: 'Run build steps inside a Docker container')
+            method(name: 'withDockerRegistry', type: Object, params: [registry: Map, body: Closure], doc: 'Advanced/Deprecated Sets up Docker registry endpoint')
+            method(name: 'withDockerServer', type: Object, params: [server: Map, body: Closure], doc: 'Advanced/Deprecated Sets up Docker server endpoint')
+            method(name: 'parallel', type: Object, params: [body: Map], doc: 'Execute task in parallel')
+            method(name: 'parallel', type: Object, params: [body: Closure], doc: 'Execute task in parallel')
+            method(name: 'parallel', type: Object, params: ['closures': Map], doc: 'Execute in parallel')
+            method(name: 'parallel', type: Object, namedParams: [parameter(name: 'closures', type: Map), parameter(name: 'failFast', type: Boolean),], doc: 'Execute in parallel')
+            method(name: 'aliyunOSSUpload', type: Object, doc: 'Upload files or directories to aliyun OSS',
+                    namedParams: [parameter(name: 'endpoint', type: String),
+                                  parameter(name: 'accessKeyId', type: String),
+                                  parameter(name: 'accessKeySecret', type: String),
+                                  parameter(name: 'bucketName', type: String),
+                                  parameter(name: 'localPath', type: String),
+                                  parameter(name: 'remotePath', type: String),
+                                  parameter(name: 'maxRetries', type: String)])
+            method(name: 'archiveArtifacts', type: Object,
+                    namedParams: [parameter(name: 'artifacts', type: String, doc: 'Use comma separator to set a list of patterns'),
+                                  parameter(name: 'excludes', type: String, doc: 'Use comma separator to set a list of patterns'),
+                                  parameter(name: 'allowEmptyArchive', type: Boolean),
+                                  parameter(name: 'caseSensitive', type: Boolean),
+                                  parameter(name: 'defaultExcludes', type: Boolean),
+                                  parameter(name: 'fingerprint', type: Boolean),
+                                  parameter(name: 'followSymlinks', type: Boolean),
+                                  parameter(name: 'onlyIfSuccessful', type: Boolean)
+                    ])
+            method(name: 'buildName', type: Object, params: [buildName: String], doc: 'Build name')
+            method(name: 'buildDescription', type: Object, params: [buildDescription: String], doc: 'Build description')
+            method(name: 'publishIssues', type: Object, params: [issues:List], doc: 'Publish issues created by a static analysis scan')
+            method(name: 'publishIssues', type: Object, namedParams: [parameter(name: 'issues', type: 'java.util.List'), parameter(name: 'failOnError', type: 'boolean')])
+            method(name: 'scanForIssues', type: 'Object', params: [:], doc: 'Scan files or the console log for warnings or issues')
+            method(name: 'scanForIssues', type: 'Object', namedParams: [parameter(name: 'blameDisabled', type: 'boolean'), parameter(name: 'filters', type: 'java.util.List')])
+        }
+    }
+}
+
+def contributorBody = context(scope: closureScope(isArg: true))
+
+contributor([contributorBody]) {
+    if (enclosingCall("contributor")) {
+        method name: "method", type: "void", params: [args: [
+                parameter(name:'name', type:String.name, doc:'Method name'),
+                parameter(name:'params', type:Map.name, doc:'A map representing method parameters'),
+                parameter(name:'namedParams', type:Object.name, doc:'''A list representing method named parameters.<br>
+Its elements should be calls to <code>parameter</code> method.'''),
+                parameter(name:'type', type:Object.name, doc:'Return type name of the method'),
+                parameter(name:'doc', type:String.name, doc:'Method documentation text'),
+        ]], doc:'Describe a DSL method'
+        method name: "property", type: "void", params: [args: [
+                parameter(name:'name', type:String.name, doc:'Property name'),
+                parameter(name:'type', type:Object.name, doc:'Property type name'),
+                parameter(name:'doc', type:String.name, doc:'Property documentation text'),
+        ]], doc:'Describe a DSL property'
+        method name: "parameter", type: "Parameter", params: [args: [
+                parameter(name:'name', type:String.name, doc:'Parameter name'),
+                parameter(name:'type', type:Object.name, doc:'Parameter type name'),
+                parameter(name:'doc', type:String.name, doc:'Parameter documentation text'),
+        ]], doc:'Describe a method named parameter'
+
+        method name: "add", type: "void", params: [member: "com.intellij.psi.PsiMember"]
+        method name: "findClass", type: "com.intellij.psi.PsiClass", params: [name: "java.lang.String"]
+        method name: "delegatesTo", type: "void", params: [elem: "com.intellij.psi.PsiElement"]
+
+        method name: "enclosingCall",
+                type: "com.intellij.psi.PsiElement",
+                params: [methodName: "java.lang.String"]
+
+        method name: "enclosingMethod", type: "com.intellij.psi.PsiMethod"
+        method name: "enclosingMember", type: "com.intellij.psi.PsiMember"
+        method name: "enclosingClass", type: "com.intellij.psi.PsiClass"
+
+        property name: "place", type: "com.intellij.psi.PsiElement"
+        property name: "classType", type: "com.intellij.psi.PsiClass"
+    }
+}
+
+def psiClassContext = context(scope: closureScope(isArg: true), ctype: "com.intellij.psi.PsiClass")
+contributor([psiClassContext]) {
+    method name: "getMethods", type: "java.util.Collection"
+    method name: "getQualName", type: "java.lang.String"
+}
+
+def psiMemberContext = context(scope: closureScope(isArg: true), ctype: "com.intellij.psi.PsiMember")
+contributor([psiMemberContext]) {
+    method name: "hasAnnotation", params: [name: "java.lang.String"], type: "boolean"
+    method name: "hasAnnotation", type: "boolean"
+    method name: "getAnnotation", params: [name: "java.lang.String"], type: "com.intellij.psi.PsiAnnotation"
+    method name: "getAnnotations", params: [name: "java.lang.String"], type: "java.util.Collection<com.intellij.psi.PsiAnnotation>"
+}
+
+def psiFieldContext = context(scope: closureScope(isArg: true), ctype: "com.intellij.psi.PsiField")
+contributor([psiFieldContext]) {
+    method name: "getClassType", type: "com.intellij.psi.PsiClass"
+}
+
+def psiMethodContext = context(scope: closureScope(isArg: true), ctype: "com.intellij.psi.PsiMethod")
+contributor([psiMethodContext]) {
+    method name: "getParamStringVector", type: "java.util.Map"
+}
+
+def psiElementContext = context(scope: closureScope(isArg: true), ctype: "com.intellij.psi.PsiElement")
+contributor([psiElementContext]) {
+    method name: "bind", type: "com.intellij.psi.PsiElement"
+    method name: "eval", type: "java.lang.Object"
+    method name: "asList", type: "java.util.collection<com.intellij.psi.PsiElement>"
+    method name: "getQualifier", type: "com.intellij.psi.PsiElement"
+}
+
+def expressionContext = context(scope: closureScope(isArg: true),
+        ctype: "org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrExpression")
+contributor([expressionContext]) {
+    method name: "getArguments", type: "java.util.Collection"
+    method name: "getClassType", type: "com.intellij.psi.PsiClass"
+
+}
+
+
+
+

@@ -1,0 +1,237 @@
+#!groovy
+package main
+//--------------------------------------------------------------------------------------
+
+
+/*Global Pipeline Configurations for all stages - Start */
+pipeline {
+
+    //Agent indicates that Jenkins should allocate an executor and workspace for this part of the Pipeline.
+    // Value = "Any allows the SYSTEM to choose which agent executes the output"
+    agent any   // todo test use within closure
+    // agent {any}
+
+
+    environment {
+        // Need to specify these variables, or shell scripts will not run
+        PATH = "/sbin:/usr/sbin:/usr/bin:/usr/local/bin:/bin"
+        // HOME variable needs to be explicitly specified, or the build will fail fatally
+        HOME = "/var/lib/jenkins"
+    }
+
+    // A section defining tools to auto-install and put on the PATH. This is ignored if agent none is specified.
+    tool {
+        maven "m2"
+        jdk "java8"
+        nodejs "node6"
+    }
+
+    maven {
+        localRepository(LocalRepositoryLocation.LOCAL_TO_WORKSPACE)
+    }
+
+    // The options directive allows configuring Pipeline or the stage level
+    options {
+
+        //Sets the period for the pipeline to run before Jenkins will invoke an automatic timeout
+        timeout(time: 15, unit: 'MINUTES')
+
+        //Will prepend console output with timestamps
+        timestamps()
+
+        //Will cause parallel stages to fail fast
+        parallelsAlwaysFailFast()
+
+        //Adds color to the Jenkins Console
+        ansiColor('xterm')
+    }
+
+
+
+    //Sets the configuration for the input parameters which are required to trigger a build
+    parameters {
+        //Sets the values as multiple choice, which will drive the target server configuration for the deploy stage
+        choice(
+                name: "deployTarget",
+                description: "Target Deployment Environment(s) Selection",
+                choices:["None - Build Only", "Dev 1", "Dev 2", "Dev 4", "Dev 5", "QA 1", "QA 2", "Perf", "Stage"]
+        )
+
+        //Skip Test booleanParam sets the UI type as a checkbox
+        booleanParam(
+                name: "skipTestExecution",
+                defaultValue: false,
+                description: "Check the box to disable the Test Execution Stage"
+        )
+
+        //Skip Static Analysis  booleanParam sets the UI type as a checkbox
+        booleanParam(
+                name: "skipStaticAnalysis",
+                defaultValue: false,
+                description: "Check the box to disable the Static Analysis Execution Stage"
+        )
+
+
+        //Skip Sonarqube booleanParam sets the UI type as a checkbox
+        booleanParam(
+                name: "skipSonarExecution",
+                defaultValue: false,
+                description: "Check the box to disable the Sonarqube Execution Stage"
+        )
+    }
+
+
+
+    //Begin defining the various build Stages
+    stages {
+        stage('Print Build & Env Info') {
+            steps {
+
+                script {}
+
+                //Print Jenkins Environment Info on screen
+                sh "printenv | sort"
+
+
+                //Print the Build Number
+                echo "The build number is ${env.BUILD_NUMBER}"
+
+                //Print Maven Version on screen along with JDK installation info
+                sh "mvn --version"
+
+                //Print user entered build Parameters
+                echo "Environments to deploy to ${deployTarget}"
+
+                echo "Tests will be skipped? ${skipTestExecution}"
+
+                echo "Sonarqube Execution will be skipped? ${skipSonarExecution}"
+
+                echo "Static  Analysis ll be skipped? ${skipSonarExecution}"
+
+                echo "${BITBUCKET_PAYLOAD}"
+            }
+        }
+
+        stage("Build Code & SKIP Tests") {
+
+            when {
+                expression {
+                    //Uses this pipeline configuration to build the code, while skipping the tests
+                    return params.skipTestExecution == true
+                }
+            }
+            steps {
+                wrappers {
+                    colorizeOutput(colorMap = "xterm")
+                }
+                //Configuration for Stage Error messaging
+
+                warnError('build failed') {
+
+                    sh "mvn clean install -U -e -DskipTests"
+                }
+                archiveArtifacts artifacts: ('**/target/*.jar')
+                archiveArtifacts artifacts: ('**/target/*.zip')
+            }
+        }
+
+        stage('Build Code & Test') {
+
+            when {
+                expression {
+                    return params.skipTestExecution == false //Uses this pipeline configuration to build the code, to PROCESS / RUN the tests
+                }
+            }
+            steps {
+                wrappers {
+                    colorizeOutput(colorMap = "xterm")
+                }
+
+                warnError('Build & Test Has Failed') {
+
+                    //Maven Build Command, -e Turns on stacktraces, -U forces updates, -Pjacoco is the JaCoCo code coverage profile
+                    sh "mvn clean install -e -U -Pjacoco " //Runs maven unit tests and executes JaCoCo code coverage profile
+                }
+
+
+                //Archives Maven Build Archives so they can be used /accessed later if needed
+                archiveArtifacts artifacts: ('**/target/*.jar')
+                archiveArtifacts artifacts: ('**/target/*.zip')
+
+
+                //Publishes jUnit report data for display within Jenkins
+                junit testResults: '**/target/surefire-reports/TEST-*.xml'
+
+                //Publishes jacoco report data for display within Jenkins
+                jacoco execPattern: '**/target/jacoco.exec'
+            }
+        }
+
+        stage ('Static Code * Sonar Analysis') {
+            when {
+                expression {
+                    //Uses this pipeline configuration to build the code, to PROCESS / RUN the tests
+                    return params.skipStaticAnalysis == false
+                }
+            }
+            steps {
+
+                // Compile / Static Analysis
+                warnError('Static Analysis has FAILED') {
+
+                    sh "mvn install -e -U -DskipTests -Pstatic-analysis"
+                }
+
+                //Sonarqube analysis
+                warnError('Sonarqube Analysis has FAILED') {
+
+                    sh "mvn sonar:sonar -Dsonar.branch.name=${env.BRANCH_NAME} -Dsonar.source.branch= ${BITBUCKET_SOURCE_BRANCH} -Dsonar.target.branch= ${BITBUCKET_TARGET_BRANCH}"
+                }
+
+
+                //Script protocol is needed here, otherwise Pipeline will throw an error
+                //TODO Remediate post build publish issue, as it would not be anticipated that the script variable would be needed here - https://github.com/jenkinsci/job-dsl-plugin/wiki/Script-Security
+                script {
+
+                    checkstyle = scanForIssues tool: checkStyle(pattern: '**/target/checkstyle-result.xml')
+                    publishIssues issues: [checkstyle]
+
+                    pmd = scanForIssues tool: pmdParser(pattern: '**/target/pmd.xml')
+                    publishIssues issues: [pmd]
+
+                    cpd = scanForIssues tool: cpd(pattern: '**/target/cpd.xml')
+                    publishIssues issues: [cpd]
+
+                    spotbugs = scanForIssues tool: spotBugs(pattern: '**/target/spotbugsXml.xml')
+                    publishIssues issues: [spotbugs]
+
+                    maven = scanForIssues tool: mavenConsole()
+                    publishIssues issues: [maven]
+                }
+            }
+        }
+
+        stage('Deploy Code') {
+            when {
+                expression {
+                    //This process will only execute when the chosen deployment parameter is NOT EQUAL to the "Build Only" option
+                    return params.deployTarget != "None - Build Only"
+                }
+            }
+        }
+
+        //stage('Cleanup') {
+        //steps {
+        //Clean workspace if build passes
+        //cleanWs notFailBuild: true
+        //}
+    }
+
+}  // End of Stages Section
+
+
+
+
+
+
+
