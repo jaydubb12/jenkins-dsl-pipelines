@@ -11,7 +11,6 @@ pipeline {
     agent any   // todo test use within closure
     // agent {any}
 
-
     environment {
         // Need to specify these variables, or shell scripts will not run
         PATH = "/sbin:/usr/sbin:/usr/bin:/usr/local/bin:/bin"
