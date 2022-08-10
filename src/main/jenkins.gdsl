@@ -1,20 +1,32 @@
-package main
 /**
- * Defines the "Where". Context definition in GroovyDSL is nothing but an invocation of a predefined method context
+ * JENKINS_HOST/job/pipeline-job/pipeline-syntax/gdsl
+ * https://gist.github.com/Mr-LiuDC/8a1fbe27e8fbd42361185b06085ef4c3
+ *
+ * All pipeline steps can be found here: https://www.jenkins.io/doc/pipeline/steps/
+ */
+
+package main
+
+/**
+ * Context defines the "Where". Context definition in GroovyDSL is nothing but an invocation of a predefined method context
  * with optional arguments, each of which may be omitted. Without any arguments given invocation of
  * context method returns the definition of an empty context, which has a meaning ``everywhere''.
  */
+
+// Defines the global scope
 def gdslScriptContext = context(
                     scope: scriptScope(),
                     filetypes: ["gdsl","groovy"]
-)
 
+)
 
 /**
  * Contributors provide new properties and methods according to given contexts.
  * We provide a set of utility methods to augment existing types with new behavior,
  * which may be used in a contributor application as regular Groovy methods.
  */
+
+// Defines the global script scope
 contributor([gdslScriptContext]) {
     method name: "context", params: [args: [:]], type: "java.lang.Object"
     method name: "contributor", params: [contexts: "java.util.List", body: {}], type: void
@@ -25,17 +37,21 @@ contributor([gdslScriptContext]) {
 
 
     // Parent Pipeline Object
-    method(name: 'pipeline', type: Object, params: [body: Closure], doc: 'Declarative Pipeline')
-    property(name: 'pipeline', type: 'org.jenkinsci.plugins.pipeline.modeldefinition.ModelStepLoader')
+    method(name: 'pipeline', type: 'org.jenkinsci.plugins.pipeline.modeldefinition.ModelStepLoader', params: [body: Closure], doc: 'Declarative Pipeline')
     property(name: 'params', type: 'org.jenkinsci.plugins.workflow.cps.ParamsVariable')
     property(name: 'env', type: 'org.jenkinsci.plugins.workflow.cps.EnvActionImpl.Binder', doc: 'Environment variable')
     property(name: 'currentBuild', type: 'org.jenkinsci.plugins.workflow.cps.RunWrapperBinder')
     property(name: 'scm', type: 'org.jenkinsci.plugins.workflow.multibranch.SCMVar')
+    }
 
-}
+
+
+
+
 // Define default env vars
 def envVars = context(ctype: 'org.jenkinsci.plugins.workflow.cps.EnvActionImpl.Binder')
 
+// Defines what can be done within the Environment Variables
 contributor([envVars]) {
     property(name: 'BRANCH_NAME', type: String, doc: 'For a multibranch project, this will be set to the name of the branch being built, for example in case you wish to deploy to production from master but not from feature branches; if corresponding to some kind of change request, the name is generally arbitrary (refer to CHANGE_ID and CHANGE_TARGET)')
     property(name: 'CHANGE_ID', type: String, doc: 'For a multibranch project corresponding to some kind of change request, this will be set to the change ID, such as a pull request number, if supported; else unset')
@@ -61,10 +77,11 @@ contributor([envVars]) {
     property(name: 'JOB_URL', type: String, doc: 'Full URL of this job, like http://server:port/jenkins/job/foo/ (Jenkins URL must be set)')
 }
 
-def closures = context(scope: closureScope())
 
+def closures = context(scope: closureScope())
 contributor([closures]) {
-    // What things can be inside a pipeline
+    // Defines what can be done within the Pipeline closure
+    // todo alphabetize the configurations
     if (enclosingCall('pipeline')) {
         method(name: 'ansiColor', type: Object, params: [colorMapName: String], doc: 'Color ANSI Console Output')
         method(name: 'echo', type: Object, params: [message: String], doc: 'Print Message')
@@ -120,8 +137,9 @@ contributor([closures]) {
         method(name: 'withContext', type: Object, params: [context: Object, body: Closure], doc: 'Advanced/Deprecated Use contextual object from internal APIs within a block')
     }
 
-    // The agent section
+    // Configurations available within the agent section
     if (enclosingCall("agent")) {
+        // todo remediate issues with any and none
         property(name: 'any', type: String, 'doc': 'Use any available agent')
         property(name: 'none', type: String, 'doc': 'No global agent defined')
         method(name: 'node', type: Closure, 'doc': 'Same as label keyword with additional options such as customWorkspace')
@@ -145,15 +163,14 @@ contributor([closures]) {
         }
     }
 
-
-    // The Global  Tool section
+    // Configurations available within the Global Tools section
     if (enclosingCall('tool')) {
         method(name: 'maven', type: Object, params: [tool: String], doc: 'Global Maven Tool')
         method(name: 'jdk', type: Object, params: [tool: String], doc: 'Global JDK Tool')
         method(name: 'nodejs', type: Object, params: [tool: String], doc: 'Global Node Tool')
     }
 
-    // The options section
+    // Configurations available within the options section
     if (enclosingCall("options")) {
         method(name: 'timestamps')
         method(name: 'skipStagesAfterUnstable')
@@ -166,17 +183,42 @@ contributor([closures]) {
         method(name: 'timeout', type: Object, namedParams: [parameter(name: 'time', type: Integer), parameter(name: 'unit', type: String)])
     }
 
+    // Configurations available within the parameters section
     if (enclosingCall("parameters")) {
+        method(name: 'password', type: Object, namedParams: [parameter(name: 'name', type: String), parameter(name: 'defaultValue', type: String), parameter(name: 'description', type: String)])
+        method(name: 'string', type: Object, namedParams: [parameter(name: 'name', type: String), parameter(name: 'defaultValue', type: String), parameter(name: 'description', type: String)])
         method(name: 'choice', type: Object, namedParams: [parameter(name: 'name', type: String), parameter(name: 'description', type: String), parameter(name: 'choices', type: ArrayList<String>)])
         method(name: 'booleanParam', type: Object, namedParams: [parameter(name: 'name', type: String), parameter(name: 'description', type: String), parameter(name: 'defaultValue', type: Boolean)])
     }
-    // Inside stages can be, stage or stage('Name')
+
+    // Configurations available within the triggers section
+    if (enclosingCall("triggers")) {
+        method(name: 'cron', type: String, params: [expr: String], doc: 'Cron expression can be one of @daily, @hourly, etc')
+        method(name: 'upstream', type: Object, params: [name: String, build_status: Object])
+        method(name: 'pollSCM', type: String, params: [expr: String])
+        method(name: 'bitbucketPush')
+        method(name: 'GenericTrigger', type: Object, doc: 'Generic Webhook Trigger',
+                namedParams: [parameter(name: 'genericVariables', type: List, doc: 'Request body'),
+                              parameter(name: 'genericRequestVariables', type: List, doc: 'Request query parameters'),
+                              parameter(name: 'genericHeaderVariables', type: List, doc: 'Request headers'),
+                              parameter(name: 'token', type: String, doc: 'Webhook trigger token'),
+                              parameter(name: 'tokenCredentialId', type: String, doc: 'CredentialId'),
+                              parameter(name: 'causeString', type: String, doc: 'Build cause'),
+                              parameter(name: 'printContributedVariables', type: Boolean, doc: ''),
+                              parameter(name: 'printPostContent', type: Boolean, doc: ''),
+                              parameter(name: 'silentResponse', type: Boolean, doc: ''),
+                              parameter(name: 'regexpFilterText', type: String, doc: ''),
+                              parameter(name: 'regexpFilterExpression', type: String, doc: ''),
+                ])
+    }
+
+    // Configurations available within the Stages section, where all stages are defined
     if (enclosingCall("stages")) {
         method(name: 'stage', type: Object, params: [name: String, body: Closure], doc: 'Stage')
         method(name: 'stage', type: Object, params: [body: Closure], namedParams: [parameter(name: 'name', type: String), parameter(name: 'concurrency', type: Integer)], doc: 'Stage')
     }
 
-    // The stage section
+    // Configurations available within each stage section
     if (enclosingCall("stage")) {
         method(name: 'agent', type: Object, params: [body: Closure], doc: 'Label expression to select agents')
         method(name: 'agent', type: String, params: [body: String], doc: 'Label expression to select agents')
@@ -292,8 +334,28 @@ contributor([closures]) {
             method(name: 'scanForIssues', type: 'Object', params: [:], doc: 'Scan files or the console log for warnings or issues')
             method(name: 'scanForIssues', type: 'Object', namedParams: [parameter(name: 'blameDisabled', type: 'boolean'), parameter(name: 'filters', type: 'java.util.List')])
         }
+        // Configurations that will support PostBuild operations
+        if (enclosingCall("post")) {
+            method(name: 'always', type: Object, params: [body: Closure])
+            method(name: 'success', type: Object, params: [body: Closure])
+            method(name: 'failure', type: Object, params: [body: Closure])
+            method(name: 'unstable', type: Object, params: [body: Closure])
+            method(name: 'changed', type: Object, params: [body: Closure])
+            method(name: 'aborted', type: Object, params: [body: Closure])
+            method(name: 'fixed', type: Object, params: [body: Closure])
+            method(name: 'regression', type: Object, params: [body: Closure])
+            method(name: 'unsuccessful', type: Object, params: [body: Closure])
+            method(name: 'cleanup', type: Object, params: [body: Closure])
+        }
     }
 }
+
+
+/**
+ * The following section is required so that the .gdsl file can locate the
+ * definitions needed
+ */
+
 
 def contributorBody = context(scope: closureScope(isArg: true))
 

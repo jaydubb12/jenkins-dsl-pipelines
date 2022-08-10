@@ -1,10 +1,14 @@
-#!groovy
 package main
-//--------------------------------------------------------------------------------------
 
+/**
+ * JENKINS_HOST/job/pipeline-job/pipeline-syntax/gdsl
+ * https://gist.github.com/Mr-LiuDC/8a1fbe27e8fbd42361185b06085ef4c3
+ *
+ * All pipeline steps can be found here: https://www.jenkins.io/doc/pipeline/steps/
+ */
 
 /*Global Pipeline Configurations for all stages - Start */
-pipeline {
+ pipeline {
 
     //Agent indicates that Jenkins should allocate an executor and workspace for this part of the Pipeline.
     // Value = "Any allows the SYSTEM to choose which agent executes the output"
