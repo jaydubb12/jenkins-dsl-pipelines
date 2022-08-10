@@ -2,7 +2,6 @@ package main
 
 /**
  * JENKINS_HOST/job/pipeline-job/pipeline-syntax/gdsl
- * https://gist.github.com/Mr-LiuDC/8a1fbe27e8fbd42361185b06085ef4c3
  *
  * All pipeline steps can be found here: https://www.jenkins.io/doc/pipeline/steps/
  */
@@ -12,8 +11,7 @@ package main
 
     //Agent indicates that Jenkins should allocate an executor and workspace for this part of the Pipeline.
     // Value = "Any allows the SYSTEM to choose which agent executes the output"
-    agent any   // todo test use within closure
-    // agent {any}
+    agent any
 
     environment {
         // Need to specify these variables, or shell scripts will not run
@@ -25,8 +23,8 @@ package main
     // A section defining tools to auto-install and put on the PATH. This is ignored if agent none is specified.
     tool {
         maven "m2"
-        jdk "java8"
-        nodejs "node6"
+        jdk "java18"
+        // nodejs "node6"
     }
 
     maven {
@@ -45,7 +43,7 @@ package main
         //Will cause parallel stages to fail fast
         parallelsAlwaysFailFast()
 
-        //Adds color to the Jenkins Console
+        //Adds color to the Jenkins Console - https://plugins.jenkins.io/ansicolor/
         ansiColor('xterm')
     }
 
@@ -113,6 +111,7 @@ package main
 
                 echo "${BITBUCKET_PAYLOAD}"
             }
+
         }
 
         stage("Build Code & SKIP Tests") {
@@ -147,7 +146,7 @@ package main
             }
             steps {
                 wrappers {
-                    colorizeOutput(colorMap = "xterm")
+                    ansiColor( "xterm")
                 }
 
                 warnError('Build & Test Has Failed') {
@@ -214,7 +213,7 @@ package main
             }
         }
 
-        stage('Deploy Code') {
+        stage ('Deploy Code') {
             when {
                 expression {
                     //This process will only execute when the chosen deployment parameter is NOT EQUAL to the "Build Only" option
