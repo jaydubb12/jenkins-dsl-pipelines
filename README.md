@@ -9,7 +9,7 @@ Sample repo demonstrating use of Jenkins DSL Pipelines via IntelliJ that will su
 * This repository is not a passive gist, but a full / working example of the configuration needed to get this working in the IntelliJ IDE
 * Includes additional code within the `jenkins.gdsl` file that will help to avoid a bunch of distracting errors in the `.gdsl` file
 * I have expanded and extended a number of closures, properties and other items beyond what is provided OOTB via Jenkins
-* I have also expanded upon the great work of a few other Github users [@ramna2913](https://gist.github.com/ranma2913/6c2424a5bda07d12d034502fb4b0b7c2) and [@ggarcia24](https://gist.github.com/ggarcia24/fc5acec3288812b34c64a4f2b8f9bca9)
+* I have also expanded upon the great work of a few other Github users [@ramna2913](https://gist.github.com/ranma2913/6c2424a5bda07d12d034502fb4b0b7c2), [@Mr-LiuDC](https://gist.github.com/Mr-LiuDC/8a1fbe27e8fbd42361185b06085ef4c3) and [@ggarcia24](https://gist.github.com/ggarcia24/fc5acec3288812b34c64a4f2b8f9bca9)
 
 ## IDE Setup
 
