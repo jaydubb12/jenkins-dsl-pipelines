@@ -2,6 +2,13 @@
 
 [![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen.svg?style=flat-square)](https://github.com/RichardLitt/standard-readme)
 
+## Features
+
+### IntelliJ Type Ahead & Type validation
+
+![Screen Shot 2022-08-10 at 1 35 07 PM](https://user-images.githubusercontent.com/21325640/184245367-e7166c1f-b07f-4de9-b269-25c449d1755f.png)
+
+
 ## Overview
 
 Sample repo demonstrating use of Jenkins DSL Pipelines via IntelliJ that will support code completion and validation.
