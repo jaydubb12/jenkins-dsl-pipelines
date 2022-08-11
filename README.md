@@ -1,5 +1,7 @@
 # jenkins-dsl-pipelines
 
+[![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen.svg?style=flat-square)](https://github.com/RichardLitt/standard-readme)
+
 ## Overview
 
 Sample repo demonstrating use of Jenkins DSL Pipelines via IntelliJ that will support code completion and validation.
