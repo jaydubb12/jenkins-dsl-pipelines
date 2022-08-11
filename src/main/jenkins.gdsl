@@ -37,7 +37,8 @@ contributor([gdslScriptContext]) {
 
 
     // Parent Pipeline Object
-    method(name: 'pipeline', type: 'org.jenkinsci.plugins.pipeline.modeldefinition.ModelStepLoader', params: [body: Closure], doc: 'Declarative Pipeline')
+    method(name: 'pipeline', type: 'Object', params: [body: Closure], doc: 'Declarative Pipeline')
+    property(name: 'pipeline', type: 'org.jenkinsci.plugins.pipeline.modeldefinition.ModelStepLoader', params: [body: Closure], doc: 'Declarative Pipeline')
     property(name: 'params', type: 'org.jenkinsci.plugins.workflow.cps.ParamsVariable')
     property(name: 'env', type: 'org.jenkinsci.plugins.workflow.cps.EnvActionImpl.Binder', doc: 'Environment variable')
     property(name: 'currentBuild', type: 'org.jenkinsci.plugins.workflow.cps.RunWrapperBinder')
