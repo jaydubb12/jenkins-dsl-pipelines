@@ -1,17 +1,16 @@
+#!groovy
 package main
+//--------------------------------------------------------------------------------------
 
-/**
- * JENKINS_HOST/job/pipeline-job/pipeline-syntax/gdsl
- *
- * All pipeline steps can be found here: https://www.jenkins.io/doc/pipeline/steps/
- */
 
 /*Global Pipeline Configurations for all stages - Start */
- pipeline {
+pipeline {
 
     //Agent indicates that Jenkins should allocate an executor and workspace for this part of the Pipeline.
     // Value = "Any allows the SYSTEM to choose which agent executes the output"
-    agent any
+    agent any   // todo test use within closure
+    // agent {any}
+
 
     environment {
         // Need to specify these variables, or shell scripts will not run
@@ -23,8 +22,8 @@ package main
     // A section defining tools to auto-install and put on the PATH. This is ignored if agent none is specified.
     tool {
         maven "m2"
-        jdk "java18"
-        // nodejs "node6"
+        jdk "java8"
+        nodejs "node6"
     }
 
     maven {
@@ -43,7 +42,7 @@ package main
         //Will cause parallel stages to fail fast
         parallelsAlwaysFailFast()
 
-        //Adds color to the Jenkins Console - https://plugins.jenkins.io/ansicolor/
+        //Adds color to the Jenkins Console
         ansiColor('xterm')
     }
 
@@ -111,7 +110,6 @@ package main
 
                 echo "${BITBUCKET_PAYLOAD}"
             }
-
         }
 
         stage("Build Code & SKIP Tests") {
@@ -146,7 +144,7 @@ package main
             }
             steps {
                 wrappers {
-                    ansiColor( "xterm")
+                    colorizeOutput(colorMap = "xterm")
                 }
 
                 warnError('Build & Test Has Failed') {
@@ -213,7 +211,7 @@ package main
             }
         }
 
-        stage ('Deploy Code') {
+        stage('Deploy Code') {
             when {
                 expression {
                     //This process will only execute when the chosen deployment parameter is NOT EQUAL to the "Build Only" option
@@ -221,7 +219,12 @@ package main
                 }
             }
         }
+        post {
+            success {};
+            failure {}
+        }
 
+        always {}
         //stage('Cleanup') {
         //steps {
         //Clean workspace if build passes
@@ -230,7 +233,6 @@ package main
     }
 
 }  // End of Stages Section
-
 
 
 
