@@ -83,7 +83,7 @@ contributor([closures]) {
         method(name: 'build', type: Object, params: [job: String], doc: 'Build a job')
         method(name: 'build', type: Object, namedParams: [parameter(name: 'job', type: String), parameter(name: 'parameters', type: List), parameter(name: 'propagate', type: Boolean), parameter(name: 'quietPeriod', type: Integer), parameter(name: 'wait', type: Boolean)], doc: 'Build a job')
         method(name: 'ec2', type: Object, namedParams: [parameter(name: 'cloud', type: String), parameter(name: 'template', type: String)], doc: 'Cloud template provisioning')
-        method(name: 'error', type: Object, pagenarams: [message: String], doc: 'Error signal')
+        method(name: 'error', type: Object, params: [message: String], doc: 'Error signal')
         method(name: 'input', type: Object, params: [message: String], doc: 'Wait for interactive input')
         method(name: 'input', type: Object, namedParams: [parameter(name: 'message', type: String), parameter(name: 'id', type: String), parameter(name: 'ok', type: String), parameter(name: 'parameters', type: Map), parameter(name: 'submitter', type: String), parameter(name: 'submitterParameter', type: String)], doc: 'Wait for interactive input')
         method(name: 'isUnix', type: Object, params: [:], doc: 'Checks if running on a Unix-like node')
